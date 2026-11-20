@@ -13,6 +13,7 @@ app.use(express.json({limit:'64kb'}));
 app.use(enforceOrigin);
 app.use((req,res,next)=>{
  const localHosts=[`localhost:${req.socket.localPort}`,`127.0.0.1:${req.socket.localPort}`];
+ if (process.env.RENDER_EXTERNAL_HOSTNAME) localHosts.push(process.env.RENDER_EXTERNAL_HOSTNAME);
  if(!localHosts.includes(req.get('host')))return res.status(403).json({error:'Open the clinic from localhost.'});
  next();
 });
@@ -232,7 +233,8 @@ app.use((err,req,res,next)=>{
  const status=err.status||500;if(status===500)console.error(err);res.status(status).json({error:status===500?'Internal server error.':err.message});
 });
 if(require.main===module){(async()=>{try{const {client,db:database}=await connect();db=database;await setupSchema(db);
- const server=app.listen(PORT,'127.0.0.1',()=>console.log(`Clinic: http://localhost:${PORT} | DB: ${DB_NAME}`));
+ const host = process.env.RENDER_EXTERNAL_HOSTNAME ? '0.0.0.0' : '127.0.0.1';
+const server = app.listen(PORT, host, () => console.log(`Clinic listening on port ${PORT}`));
  const stop=async()=>{server.close();await client.close();process.exit(0);};process.on('SIGTERM',stop);process.on('SIGINT',stop);
  }catch(e){console.error('Clinic startup failed:',e.message);process.exitCode=1;}})();}
 module.exports={app,validate,FIELDS};
