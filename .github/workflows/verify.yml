@@ -1,0 +1,67 @@
+name: Verify clinic app
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok || quit(1)'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run seed
+      - name: Verify the dashboard and MongoDB-backed API
+        run: |
+          node server.js > clinic.log 2>&1 &
+          server_pid=$!
+          trap 'cat clinic.log; kill "$server_pid" 2>/dev/null || true' EXIT
+
+          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:3000/ -o dashboard.html
+          grep -q 'id="workspace"' dashboard.html
+          curl --fail --silent --show-error http://127.0.0.1:3000/app.js -o /dev/null
+          curl --fail --silent --show-error http://127.0.0.1:3000/style.css -o /dev/null
+
+          node <<'JS'
+          const assert = require('node:assert/strict');
+          async function read(path) {
+            const response = await fetch('http://127.0.0.1:3000/api/' + path);
+            assert.equal(response.status, 200, path);
+            return response.json();
+          }
+          (async () => {
+            const workspace = await read('workspace');
+            assert.equal(workspace.permissions.patients.read, true);
+            const summary = await read('summary');
+            assert.equal(summary.patients, 10);
+            const patients = await read('patients');
+            assert.ok(patients.some(patient => patient._id === 'P001'));
+            console.log('Dashboard files and seeded MongoDB data are available.');
+          })().catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          JS

@@ -1,0 +1,11 @@
+'use strict';
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path');
+const root=path.join(__dirname,'..');
+const files=['server.js','db.js','seed.js','security.js','rules.js','../frontend/app.js','../frontend/index.html','../frontend/style.css'];
+test('all required deliverable files exist',()=>{for(const f of files)assert.ok(fs.existsSync(path.join(root,f)),f);});
+test('original four collections are preserved',()=>{const x=fs.readFileSync(path.join(root,'db.js'),'utf8');for(const name of ['patients','doctors','appointments','consultations'])assert.match(x,new RegExp('\\b'+name+':'));});
+test('expanded workflow collections are defined',()=>{const x=fs.readFileSync(path.join(root,'db.js'),'utf8');for(const name of ['triage','prescriptions','lab_requests','lab_results','invoices','payments','audit_logs'])assert.match(x,new RegExp('\\b'+name+':'));});
+test('API includes protective workflow checks and demo audits',()=>{const x=fs.readFileSync(path.join(root,'server.js'),'utf8');for(const s of ['appointmentStatusTransition','clinicAssessmentAppointment','checkAccess','audit(req.user','findOneAndUpdate'])assert.ok(x.includes(s),s);});
+test('sample reset is guarded and seeding is non destructive',()=>{const x=fs.readFileSync(path.join(root,'seed.js'),'utf8');assert.match(x,/CLINIC_ALLOW_DEMO_RESET/);assert.match(x,/\$setOnInsert/);});
